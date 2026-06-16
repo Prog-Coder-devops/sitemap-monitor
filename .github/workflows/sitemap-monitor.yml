@@ -1,11 +1,9 @@
 name: Sitemap Monitor
-
 on:
   schedule:
-    - cron: '*/5 * * * *'    # check every 5 minutes
-    - cron: '0 4 * * *'      # daily "all good" report at 09:30 IST
-  workflow_dispatch:          # lets you run it manually to test
-
+    - cron: '*/5 * * * *'
+    - cron: '0 4 * * *'
+  workflow_dispatch:
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -17,15 +15,18 @@ jobs:
           URL: https://www.sktthemes.org/this-does-not-exist.xml
           SCHEDULE: ${{ github.event.schedule }}
         run: |
+          echo "BOT_TOKEN length: ${#BOT_TOKEN}"
+          echo "CHAT_ID length: ${#CHAT_ID}"
           RESPONSE=$(curl -s -L --max-time 30 -w "\n%{http_code}" "$URL")
           STATUS=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
           echo "HTTP status: $STATUS"
 
           send () {
-            curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            RESULT=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               --data-urlencode "chat_id=${CHAT_ID}" \
-              --data-urlencode "text=$1" > /dev/null
+              --data-urlencode "text=$1")
+            echo "Telegram response: $RESULT"
           }
 
           if [ "$STATUS" != "200" ] || ! echo "$BODY" | grep -q "sitemapindex"; then
