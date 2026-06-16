@@ -1,8 +1,8 @@
 name: Sitemap Monitor
 on:
   schedule:
-    - cron: '*/5 * * * *'    # check every 5 minutes
-    - cron: '10 12 * * *'    # TEMP: daily report at 5:40 PM IST
+    - cron: '*/5 * * * *'
+    - cron: '10 12 * * *'
   workflow_dispatch:
 jobs:
   check:
@@ -26,6 +26,6 @@ jobs:
           }
           if [ "$STATUS" != "200" ] || ! echo "$BODY" | grep -q "sitemapindex"; then
             send "$(printf '🔴 ALERT — sitemap is DOWN\nStatus code: %s\n%s' "$STATUS" "$URL")"
-          elif [ "$SCHEDULE" = "10 12 * * *" ]; then
+          elif [ "$SCHEDULE" = "10 12 * * *" ] || [ -z "$SCHEDULE" ]; then
             send "$(printf '🟢 Daily check — sitemap is fine (200 OK)\n%s' "$URL")"
           fi
