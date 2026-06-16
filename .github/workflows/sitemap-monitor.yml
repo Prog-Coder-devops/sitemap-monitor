@@ -8,24 +8,46 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Check sitemap and notify
+      - name: Check sitemaps and notify
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          URL: https://www.sktthemes.org/sitemap_index.xml
           SCHEDULE: ${{ github.event.schedule }}
         run: |
-          RESPONSE=$(curl -s -L --max-time 30 -w "\n%{http_code}" "$URL")
-          STATUS=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-          echo "HTTP status: $STATUS"
+          URLS=(
+            "https://www.sktthemes.org/sitemap_index.xml"
+            "https://www.shreekrishnabanquets.com/sitemap_index.xml"
+            "https://www.pinnaclethemes.net/sitemap_index.xml"
+            "https://www.shrikrishnatechnologies.com/sitemap_index.xml"
+            "https://www.themes21.net/sitemap_index.xml"
+          )
+
           send () {
             curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               --data-urlencode "chat_id=${CHAT_ID}" \
-              --data-urlencode "text=$1" > /dev/null
+              --data-urlencode "text=$1" > /dev/null || true
           }
-          if [ "$STATUS" != "200" ] || ! echo "$BODY" | grep -q "sitemapindex"; then
-            send "$(printf '🔴 ALERT — sitemap is DOWN\nStatus code: %s\n%s' "$STATUS" "$URL")"
-          elif [ "$SCHEDULE" = "10 12 * * *" ] || [ -z "$SCHEDULE" ]; then
-            send "$(printf '🟢 Daily check — sitemap is fine (200 OK)\n%s' "$URL")"
+
+          DAILY="no"
+          if [ "$SCHEDULE" = "10 12 * * *" ] || [ -z "$SCHEDULE" ]; then
+            DAILY="yes"
+          fi
+
+          SUMMARY=""
+          for URL in "${URLS[@]}"; do
+            RESPONSE=$(curl -s -L --max-time 30 -w "\n%{http_code}" "$URL" || true)
+            STATUS=$(echo "$RESPONSE" | tail -n1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+            echo "Checked $URL -> $STATUS"
+
+            if [ "$STATUS" != "200" ] || ! echo "$BODY" | grep -q "sitemapindex"; then
+              send "$(printf '🔴 ALERT — sitemap is DOWN\nStatus code: %s\n%s' "$STATUS" "$URL")"
+              SUMMARY="${SUMMARY}🔴 ${URL} (${STATUS})"$'\n'
+            else
+              SUMMARY="${SUMMARY}🟢 ${URL}"$'\n'
+            fi
+          done
+
+          if [ "$DAILY" = "yes" ]; then
+            send "$(printf 'Daily sitemap report:\n%s' "$SUMMARY")"
           fi
