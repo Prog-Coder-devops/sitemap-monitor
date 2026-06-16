@@ -2,7 +2,7 @@ name: Sitemap Monitor
 on:
   schedule:
     - cron: '*/5 * * * *'    # check every 5 minutes
-    - cron: '0 4 * * *'      # daily "all good" report at 09:30 IST
+    - cron: '10 12 * * *'    # TEMP: daily report at 5:40 PM IST
   workflow_dispatch:
 jobs:
   check:
@@ -19,15 +19,13 @@ jobs:
           STATUS=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
           echo "HTTP status: $STATUS"
-
           send () {
             curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               --data-urlencode "chat_id=${CHAT_ID}" \
               --data-urlencode "text=$1" > /dev/null
           }
-
           if [ "$STATUS" != "200" ] || ! echo "$BODY" | grep -q "sitemapindex"; then
             send "$(printf '🔴 ALERT — sitemap is DOWN\nStatus code: %s\n%s' "$STATUS" "$URL")"
-          elif [ "$SCHEDULE" = "0 4 * * *" ]; then
+          elif [ "$SCHEDULE" = "10 12 * * *" ]; then
             send "$(printf '🟢 Daily check — sitemap is fine (200 OK)\n%s' "$URL")"
           fi
