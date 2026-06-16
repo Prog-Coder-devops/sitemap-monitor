@@ -29,10 +29,7 @@ jobs:
           }
 
           if [ "$STATUS" != "200" ] || ! echo "$BODY" | grep -q "sitemapindex"; then
-            send "🔴 ALERT — sitemap is DOWN
-Status code: ${STATUS}
-${URL}"
+            send "$(printf '🔴 ALERT — sitemap is DOWN\nStatus code: %s\n%s' "$STATUS" "$URL")"
           elif [ "$SCHEDULE" = "0 4 * * *" ]; then
-            send "🟢 Daily check — sitemap is fine (200 OK)
-${URL}"
+            send "$(printf '🟢 Daily check — sitemap is fine (200 OK)\n%s' "$URL")"
           fi
