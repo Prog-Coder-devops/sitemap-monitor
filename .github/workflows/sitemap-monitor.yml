@@ -14,7 +14,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          URL: https://www.sktthemes.org/sitemap_index.xml
+          URL: https://www.sktthemes.org/this-does-not-exist.xml
           SCHEDULE: ${{ github.event.schedule }}
         run: |
           RESPONSE=$(curl -s -L --max-time 30 -w "\n%{http_code}" "$URL")
