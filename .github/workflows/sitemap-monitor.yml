@@ -1,9 +1,11 @@
 name: Sitemap Monitor
+
 on:
   schedule:
     - cron: '*/15 * * * *'
     - cron: '10 12 * * *'
   workflow_dispatch:
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -12,8 +14,12 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+          MONITOR_TOKEN: ${{ secrets.MONITOR_TOKEN }}   # same secret you put in the Cloudflare rule
           SCHEDULE: ${{ github.event.schedule }}
         run: |
+          set -o pipefail
+          MONITOR_TOKEN="${MONITOR_TOKEN:-}"
+
           URLS=(
             "https://www.sktthemes.org/sitemap_index.xml"
             "https://www.shreekrishnabanquets.com/sitemap_index.xml"
@@ -30,19 +36,62 @@ jobs:
               --data-urlencode "text=$1" > /dev/null || true
           }
 
+          # Echoes: "<http_status>|<verdict>|<note>"
+          # verdict is one of: OK | BLOCKED | DOWN
           check_url () {
-            local url="$1" status body
+            local url="$1" status body cfray note tmp_h tmp_b
+            note=""
+            cfray=""
+            status="000"
+
             for attempt in 1 2 3; do
-              RESPONSE=$(curl -s -L --compressed --max-time 30 \
-                -A "$UA" -w "\n%{http_code}" "$url" || true)
-              status=$(echo "$RESPONSE" | tail -n1)
-              body=$(echo "$RESPONSE" | sed '$d')
-              if [ "$status" = "200" ] && echo "$body" | grep -Eiq "(sitemapindex|urlset)"; then
-                echo "${status}|OK"; return
+              tmp_h=$(mktemp); tmp_b=$(mktemp)
+
+              status=$(curl -sS -L --compressed --max-time 30 \
+                -A "$UA" \
+                -H "X-Monitor-Token: ${MONITOR_TOKEN}" \
+                -H "Accept: application/xml,text/xml,*/*" \
+                -D "$tmp_h" -o "$tmp_b" \
+                -w "%{http_code}" "$url" 2>/dev/null) || status="000"
+              status="${status:-000}"
+
+              body=$(cat "$tmp_b")
+              cfray=$(grep -i '^cf-ray:' "$tmp_h" | tr -d '\r' | awk '{print $2}')
+              rm -f "$tmp_h" "$tmp_b"
+
+              # Success = 200 AND the body really looks like a sitemap
+              if [ "$status" = "200" ] && printf '%s' "$body" | grep -Eiq "(sitemapindex|urlset)"; then
+                echo "200|OK|"
+                return
               fi
+
               sleep $((attempt * 5))
             done
-            echo "${status}|FAIL"
+
+            # ---- All retries failed: decide what KIND of failure this is ----
+            case "$status" in
+              000)
+                # No HTTP response at all: DNS fail / timeout / connection refused = genuinely unreachable
+                echo "000|DOWN|no-response-or-timeout"; return ;;
+              520|521|522|523|524|530)
+                # Cloudflare reached, but the ORIGIN is down/unreachable = real outage
+                echo "${status}|DOWN|cloudflare-origin-error"; return ;;
+              403|429|503)
+                if [ -n "$cfray" ]; then
+                  # Cloudflare responded = site is up, it's just challenging/blocking our bot
+                  echo "${status}|BLOCKED|cloudflare-bot-block"; return
+                else
+                  # No Cloudflare header = likely iThemes / origin firewall blocking the runner IP
+                  echo "${status}|BLOCKED|origin-firewall-block"; return
+                fi ;;
+              5*)
+                echo "${status}|DOWN|server-error"; return ;;
+              200)
+                # 200 but body didn't match a sitemap = probably a challenge/HTML page, not a real outage
+                echo "200|BLOCKED|200-but-not-sitemap"; return ;;
+              *)
+                echo "${status}|DOWN|unexpected-status"; return ;;
+            esac
           }
 
           DAILY="no"
@@ -53,17 +102,24 @@ jobs:
           SUMMARY=""
           for URL in "${URLS[@]}"; do
             RESULT=$(check_url "$URL")
-            STATUS="${RESULT%%|*}"
-            VERDICT="${RESULT##*|}"
-            echo "Checked $URL -> $STATUS ($VERDICT)"
-            if [ "$VERDICT" = "FAIL" ]; then
-              send "$(printf '🔴 ALERT — sitemap is DOWN\nStatus code: %s\n%s' "$STATUS" "$URL")"
-              SUMMARY="${SUMMARY}🔴 ${URL} (${STATUS})"$'\n'
-            else
-              SUMMARY="${SUMMARY}🟢 ${URL}"$'\n'
-            fi
+            STATUS="$(echo "$RESULT" | cut -d'|' -f1)"
+            VERDICT="$(echo "$RESULT" | cut -d'|' -f2)"
+            NOTE="$(echo "$RESULT" | cut -d'|' -f3)"
+
+            echo "Checked $URL -> ${STATUS} (${VERDICT}) ${NOTE}"
+
+            case "$VERDICT" in
+              OK)
+                SUMMARY="${SUMMARY}🟢 ${URL}"$'\n' ;;
+              BLOCKED)
+                # Site is up but our monitor was blocked -> NO red alert (this was your false positive)
+                SUMMARY="${SUMMARY}🟡 ${URL} (blocked: ${STATUS} ${NOTE})"$'\n' ;;
+              DOWN)
+                send "$(printf '🔴 ALERT — sitemap is DOWN\nStatus: %s (%s)\n%s' "$STATUS" "$NOTE" "$URL")"
+                SUMMARY="${SUMMARY}🔴 ${URL} (${STATUS} ${NOTE})"$'\n' ;;
+            esac
           done
 
           if [ "$DAILY" = "yes" ]; then
-            send "$(printf 'Daily sitemap report:\n%s' "$SUMMARY")"
+            send "$(printf 'Daily sitemap report:\n%s\n🟢 ok  🟡 up-but-blocked  🔴 down' "$SUMMARY")"
           fi
