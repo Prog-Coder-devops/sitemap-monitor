@@ -26,6 +26,7 @@ jobs:
             "https://www.pinnaclethemes.net/sitemap_index.xml"
             "https://www.shrikrishnatechnologies.com/sitemap_index.xml"
             "https://www.themes21.net/sitemap_index.xml"
+            "https://yellowcoder.com/sitemap_index.xml"
           )
 
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
